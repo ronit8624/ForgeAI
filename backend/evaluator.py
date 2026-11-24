@@ -1,35 +1,67 @@
 import json
+import re
 from typing import List, Dict
-from .config import settings
-from .rag import retrieve
 from .config import get_gemini_llm
+from langchain_core.messages import HumanMessage
 
-# Initialize Gemini LLM
 llm = get_gemini_llm()
 
-def generate_evaluation_questions(agent_cfg: Dict) -> List[str]:
-    """Generate at least 20 evaluation questions based on the agent's purpose and uploaded documents.
-    The function extracts the brief and a short slice of each document, then asks the LLM to produce a numbered list.
-    Returns a plain list of question strings.
-    """
-    brief = agent_cfg.get("system_prompt", "")
-    docs = agent_cfg.get("documents", [])
-    doc_snippets = "\n".join([d[:300].replace("\n", " ") for d in docs])
-    prompt = (
-        "You are to create a set of at least 20 distinct evaluation questions that thoroughly test an AI agent.\n"
-        "The agent's purpose is described in the system prompt below, and the following document snippets provide domain context.\n"
-        "Create a JSON array of strings, each a single clear question. Include a mix of:\n"
-        "- straightforward factual queries that should be answerable using the documents,\n"
-        "- out‑of‑scope queries,\n"
-        "- edge‑case or ambiguous queries that test the agent's clarification behaviour.\n"
-        "System prompt:\n" + brief + "\n\nDocument snippets (may be empty):\n" + doc_snippets + "\n\nRespond only with JSON.")
-    response = llm.invoke(prompt)
+
+def _extract_json_array(text: str) -> list:
+    """Extract a JSON array from LLM output that may be wrapped in markdown."""
+    cleaned = re.sub(r"```(?:json)?", "", text).strip().strip("`").strip()
     try:
-        questions = json.loads(response)
-        if isinstance(questions, list) and len(questions) >= 20:
-            return questions[:20]
-        # Fallback: if not enough, slice or pad with generic ones
-        return (questions if isinstance(questions, list) else [])[:20]
+        result = json.loads(cleaned)
+        if isinstance(result, list):
+            return result
     except Exception:
-        # Very simple fallback: generate generic numbered questions
-        return [f"Question {i+1}: Please describe the agent's behaviour for scenario {i+1}." for i in range(20)]
+        pass
+    # Try to find [...] block
+    match = re.search(r"\[.*\]", cleaned, re.DOTALL)
+    if match:
+        try:
+            result = json.loads(match.group())
+            if isinstance(result, list):
+                return result
+        except Exception:
+            pass
+    return []
+
+
+def generate_evaluation_questions(agent_cfg: Dict) -> List[str]:
+    """Generate at least 20 evaluation questions from the agent's documents and purpose."""
+    system_prompt = agent_cfg.get("system_prompt", "")
+    docs = agent_cfg.get("documents", [])
+    doc_snippets = "\n".join([d[:500].replace("\n", " ") for d in docs])
+
+    prompt = (
+        "You are creating evaluation test cases for an AI agent.\n"
+        "Agent purpose: " + system_prompt + "\n\n"
+        "Document content (excerpt):\n" + doc_snippets + "\n\n"
+        "Generate EXACTLY 25 evaluation questions as a JSON array of strings.\n"
+        "Include:\n"
+        "- 10 factual questions answerable from the document\n"
+        "- 5 out-of-scope questions the agent should refuse\n"
+        "- 5 edge-case or ambiguous questions\n"
+        "- 5 questions testing specific details from the document\n\n"
+        "Return ONLY a JSON array of question strings, no explanation, no markdown."
+    )
+
+    response = llm.invoke([HumanMessage(content=prompt)])
+    text = response.content if hasattr(response, "content") else str(response)
+    questions = _extract_json_array(text)
+
+    if len(questions) >= 20:
+        return questions[:25]
+
+    # Fallback: generate generic ones only if LLM truly failed
+    # (but do NOT silently substitute - report the issue in question text)
+    if not questions:
+        return [
+            f"[FALLBACK - LLM generation failed] Question {i+1}: Describe a key aspect of the agent's domain."
+            for i in range(20)
+        ]
+    # Pad if slightly short
+    while len(questions) < 20:
+        questions.append(f"What other information from the document is relevant to this agent's purpose?")
+    return questions

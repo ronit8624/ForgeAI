@@ -1,0 +1,23 @@
+{
+  "brief": "Create an agent that answers questions about France using the provided document",
+  "demo_name": "Create_an_agent_that_answers_questions_a",
+  "requirements": {
+    "purpose": "Answer user questions about France",
+    "knowledge_source": "Use only the provided document summary as the knowledge base",
+    "supported_topics": [
+      "capital of France",
+      "population of France"
+    ],
+    "response_language": "English",
+    "response_style": "Natural language answers",
+    "fallback_behavior": "Indicate when a question cannot be answered with the provided document"
+  },
+  "clarifications": [
+    "Should the agent be allowed to use external knowledge beyond the provided document?",
+    "What format should the answers be returned in (plain text, JSON, etc.)?",
+    "Should the agent maintain conversational context across multiple questions?",
+    "Is it acceptable to answer in French as well as English?",
+    "Do answers need to include citations or references to the document?"
+  ],
+  "documents_summary": "The capital of France is Paris. The population of France is about 67 million. "
+}

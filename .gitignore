@@ -7,3 +7,4 @@ node_modules/
 .DS_Store
 chroma_db/
 **/chroma_db/
+frontend/dist/
